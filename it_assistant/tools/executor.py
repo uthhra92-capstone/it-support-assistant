@@ -1,10 +1,10 @@
-"""Tool implementations. Every tool returns a ToolResult - tools never raise to the graph."""
+"""Tool implementations (business logic). They run inside the MCP server process.
+
+Every tool returns a ToolResult and never raises to the caller."""
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
 from typing import Any
 
 from it_assistant.config import Settings
@@ -25,44 +25,18 @@ from it_assistant.services.validation import (
     normalize_ticket_id,
     validate_ticket_request,
 )
+from it_assistant.tools.results import (
+    CONFIRMATION_REQUIRED,
+    DUPLICATE,
+    ERROR,
+    NEEDS_INPUT,
+    NOT_FOUND,
+    SUCCESS,
+    Source,
+    ToolResult,
+)
 
 logger = logging.getLogger(__name__)
-
-# ToolResult.status values
-SUCCESS = "success"
-NOT_FOUND = "not_found"
-NEEDS_INPUT = "needs_input"
-DUPLICATE = "possible_duplicate"
-CONFIRMATION_REQUIRED = "confirmation_required"
-ERROR = "error"
-
-
-@dataclass
-class Source:
-    """Provenance record for data retrieved from a local system (shown in the UI)."""
-
-    kind: str  # kb_article | ticket | employee | system_status
-    ref: str
-    title: str
-
-    def to_dict(self) -> dict[str, str]:
-        return {"kind": self.kind, "ref": self.ref, "title": self.title}
-
-
-@dataclass
-class ToolResult:
-    status: str
-    message: str
-    data: dict[str, Any] = field(default_factory=dict)
-    sources: list[Source] = field(default_factory=list)
-
-    @property
-    def is_error(self) -> bool:
-        return self.status == ERROR
-
-    def to_model_content(self) -> str:
-        """Serialized payload sent back to the LLM as the tool message."""
-        return json.dumps({"status": self.status, "message": self.message, "data": self.data}, default=str)
 
 
 def _employee_summary(employee: Employee) -> dict[str, Any]:

@@ -13,11 +13,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from it_assistant.agent.graph import build_graph
-from it_assistant.agent.llm import OpenAILLM, LLMClient
+from it_assistant.agent.llm import LLMClient, OpenAILLM
 from it_assistant.agent.nodes import AgentNodes
 from it_assistant.config import Settings
-from it_assistant.data.database import Database
-from it_assistant.tools.executor import ToolExecutor
+from it_assistant.tools import definitions as tool_defs
+from it_assistant.tools.mcp_backend import MCPToolBackend, ToolBackend
+from it_assistant.tools.results import SUCCESS
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,11 @@ class AgentService:
         settings: Settings,
         llm: LLMClient | None = None,
         checkpointer: BaseCheckpointSaver | None = None,
-        database: Database | None = None,
+        tools: ToolBackend | None = None,
     ) -> None:
         self.settings = settings
-        self.database = database or Database(settings.database_path)
-        self.database.initialize(settings.seed_dir)
-        self.executor = ToolExecutor(self.database, settings)
+        # Tools live in a separate MCP server process; the agent never opens the business database.
+        self.tools = tools or MCPToolBackend.from_settings(settings)
 
         if checkpointer is None:
             settings.checkpoint_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ class AgentService:
             checkpointer = SqliteSaver(conn)
         self._checkpointer = checkpointer
 
-        self._nodes = AgentNodes(llm or OpenAILLM(settings), self.executor, settings)
+        self._nodes = AgentNodes(llm or OpenAILLM(settings), self.tools, settings)
         self.graph = build_graph(self._nodes, checkpointer=checkpointer)
 
     @staticmethod
@@ -124,6 +124,14 @@ class AgentService:
         snapshot = self.graph.get_state({"configurable": {"thread_id": thread_id}})
         values = snapshot.values or {}
         return {"employee": values.get("employee"), "pending_ticket": values.get("pending_ticket")}
+
+    def system_status(self) -> list[dict[str, Any]]:
+        """Current system health for the UI sidebar (read through the MCP server)."""
+        result = self.tools.call(tool_defs.CHECK_SYSTEM_STATUS, {})
+        return result.data.get("systems", []) if result.status == SUCCESS else []
+
+    def close(self) -> None:
+        self.tools.close()
 
     def reset(self, thread_id: str) -> None:
         try:

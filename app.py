@@ -5,6 +5,7 @@ Run with:  streamlit run app.py
 
 from __future__ import annotations
 
+import atexit
 import logging
 
 import streamlit as st
@@ -21,9 +22,11 @@ logger = logging.getLogger("it_assistant.ui")
 st.set_page_config(page_title=settings.app_title, page_icon="🛠️", layout="wide")
 
 
-@st.cache_resource(show_spinner="Starting the assistant…")
+@st.cache_resource(show_spinner="Starting the assistant and its MCP tool server…")
 def get_service() -> AgentService:
-    return AgentService(settings)
+    service = AgentService(settings)
+    atexit.register(service.close)  # stop the MCP server subprocess on shutdown
+    return service
 
 
 def init_session() -> None:

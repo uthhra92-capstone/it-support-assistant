@@ -54,14 +54,14 @@ def render_sidebar(settings: Settings, service: AgentService, session: dict[str,
             st.markdown(f"`{emp_id}` - {desc}")
 
     with st.expander("Live system status"):
-        try:
-            for status in service.executor.statuses.list_all():
-                st.markdown(f"{STATUS_ICON.get(status.status, '⚪')} **{status.system_name}** - {status.status}")
-        except Exception:  # noqa: BLE001
+        systems = service.system_status()
+        if not systems:
             st.error("System status is unavailable.")
+        for system in systems:
+            st.markdown(f"{STATUS_ICON.get(system['status'], '⚪')} **{system['system_name']}** - {system['status']}")
 
     st.divider()
-    st.caption(f"Model: `{settings.model}`")
+    st.caption(f"Model: `{settings.model}` · tools via MCP ({len(service.tools.llm_tools())})")
     st.caption(f"Conversation ID: `{st.session_state.thread_id[:8]}`")
     return reset
 

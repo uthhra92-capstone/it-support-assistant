@@ -1,4 +1,4 @@
-"""Shared fixtures: temp database, settings, and a scripted fake LLM."""
+"""Shared fixtures: temp database, a real in-process MCP tool server, and a scripted fake LLM."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from it_assistant.agent.llm import LLMError, LLMResponse
 from it_assistant.agent.service import AgentService
 from it_assistant.config import PROJECT_ROOT, Settings
 from it_assistant.data.database import Database
+from it_assistant.mcp_server.server import create_server
+from it_assistant.tools.mcp_backend import MCPToolBackend
 from it_assistant.tools.executor import ToolExecutor
 
 _ids = itertools.count(1)
@@ -91,8 +93,16 @@ def llm() -> ScriptedLLM:
 
 
 @pytest.fixture
-def service(settings: Settings, llm: ScriptedLLM, database: Database) -> AgentService:
-    return AgentService(settings, llm=llm, checkpointer=InMemorySaver(), database=database)
+def tools(settings: Settings, database: Database):
+    """The real MCP server, connected in-process (same protocol, no subprocess)."""
+    backend = MCPToolBackend(create_server(settings), call_timeout=10, startup_timeout=10)
+    yield backend
+    backend.close()
+
+
+@pytest.fixture
+def service(settings: Settings, llm: ScriptedLLM, tools: MCPToolBackend) -> AgentService:
+    return AgentService(settings, llm=llm, checkpointer=InMemorySaver(), tools=tools)
 
 
 __all__ = ["ScriptedLLM", "tool_call", "final", "LLMError"]

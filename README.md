@@ -1,8 +1,8 @@
-# 🛠️ AI IT Support Assistant: an agentic workflow with LangGraph and OpenAI
+# 🛠️ AI IT Support Assistant: an agentic workflow with LangGraph, OpenAI and MCP
 
 An AI IT support assistant for a fictional company (Contoso Ltd.). It understands an employee's request, decides whether a tool is needed, picks and runs the right tool against local data, and replies in plain language. It also keeps track of who the user is and what they asked for across the conversation.
 
-> **Concepts demonstrated:** Tool calling → Agent → State → Routing → Multi-step workflow, with human-in-the-loop confirmation and guardrails.
+> **Concepts demonstrated:** Tool calling → Agent → State → Routing → Multi-step workflow, with human-in-the-loop confirmation and guardrails. The tools are served over the **Model Context Protocol (MCP)**.
 
 ---
 
@@ -12,7 +12,7 @@ Employees raise the same IT questions again and again: "how do I reset my VPN pa
 
 ## 2. Solution overview
 
-An **agent** built on **LangGraph** that uses an **OpenAI** model (Chat Completions API) for reasoning and **function calling**. It has five local tools:
+An **agent** built on **LangGraph** that uses an **OpenAI** model (Chat Completions API) for reasoning and **function calling**. Its five tools are served by a separate **MCP server** (Model Context Protocol), which the agent discovers and calls as an MCP client:
 
 | # | Tool | What it does | Data source |
 |---|------|--------------|-------------|
@@ -22,7 +22,7 @@ An **agent** built on **LangGraph** that uses an **OpenAI** model (Chat Completi
 | 4 | `get_employee_profile` | Verifies the employee ID and loads the profile into state | `employees` table |
 | 5 | `check_system_status` | Live health of VPN, Email, Wi-Fi, SSO and other systems | `system_status` table |
 
-The data lives in **SQLite**. It is seeded automatically from the JSON files in [`data/seed/`](data/seed/) the first time the app runs. The UI is built with **Streamlit**. It has a chat window, conversation history, a reset button, a visible agent trace for each answer, labels showing where data came from, and confirm/cancel buttons for tickets.
+The data lives in **SQLite**, and only the MCP server process opens it. It is seeded automatically from the JSON files in [`data/seed/`](data/seed/) the first time the app runs. The UI is built with **Streamlit**. It has a chat window, conversation history, a reset button, a visible agent trace for each answer, labels showing where data came from, and confirm/cancel buttons for tickets.
 
 ## 3. Architecture
 
@@ -46,21 +46,35 @@ flowchart TD
     R -- no tool call --> F[respond<br/>verify ticket IDs]
     F --> O([Final answer + trace + sources])
 
-    subgraph Persistence
-      S[(SQLite: employees, tickets,<br/>KB, system status)]
-      K[(SQLite checkpointer:<br/>conversation state per thread)]
+    T1 & T2 & T3 & T4 & T5 & C & F -. "MCP call_tool (stdio)" .-> M
+
+    subgraph MCP["MCP server process (python -m it_assistant.mcp_server)"]
+      M[it-support-tools<br/>6 tools] --> S[(SQLite: employees, tickets,<br/>KB, system status)]
     end
-    T1 & T2 & T3 & T4 & T5 & C -.-> S
+    K[(SQLite checkpointer:<br/>conversation state per thread)]
     A -.-> K
 ```
 
+The agent and the tools run as **two processes**. When the app starts, `AgentService` launches the MCP server as a subprocess and connects to it over **stdio** (JSON-RPC messages on stdin/stdout). It then calls `list_tools` to discover the tool schemas and sends every tool call through `call_tool`.
+
 `docs/graph.mmd` is generated from the compiled graph by `python -m scripts.export_graph`, so it always matches the code.
+
+### MCP (Model Context Protocol)
+
+| Piece | Where | What it does |
+|---|---|---|
+| **MCP server** | [`mcp_server/server.py`](it_assistant/mcp_server/server.py) | `MCPServer("it-support-tools")` publishes 6 tools. Input schemas are generated from Python type hints (`Literal` becomes an enum, `Field(description=...)` a parameter description, the docstring the tool description). It owns the database and the business logic (`ToolExecutor`). |
+| **Server entry point** | [`mcp_server/__main__.py`](it_assistant/mcp_server/__main__.py) | `python -m it_assistant.mcp_server` runs the server over stdio. It logs to stderr and `var/logs/mcp_server.log`, never stdout, which carries the protocol. |
+| **MCP client** | [`tools/mcp_backend.py`](it_assistant/tools/mcp_backend.py) | `MCPToolBackend` starts the server, keeps one `mcp.Client` session open on a background event-loop thread (LangGraph and Streamlit are synchronous, the MCP SDK is async), converts MCP tool schemas to OpenAI function format, and turns every result into a `ToolResult`. |
+| **Tool policy** | [`tools/definitions.py`](it_assistant/tools/definitions.py) | Decides what the LLM may see. `commit_ticket` is **internal**: it is never offered to the model, so only the confirmation gate can call it. `employee_id` is **injected from verified state** for ticket tools and removed from the schema the model sees. |
+
+Because the tools speak a standard protocol, any MCP-capable client (another agent, an IDE, Claude Desktop) could reuse them without code changes.
 
 ### How each required concept is implemented
 
 | Concept | Where |
 |---|---|
-| **Tool / function calling** | JSON-schema tool definitions in [`tools/definitions.py`](it_assistant/tools/definitions.py), sent to the model as OpenAI `tools`. The model returns `tool_calls`, the app sends back `role: "tool"` messages ([`agent/nodes.py`](it_assistant/agent/nodes.py)). |
+| **Tool / function calling** | Tool schemas are discovered from the MCP server (`list_tools`) and sent to the model as OpenAI `tools`. The model returns `tool_calls`. The graph runs each one through MCP `call_tool` and sends back a `role: "tool"` message ([`agent/nodes.py`](it_assistant/agent/nodes.py)). |
 | **Agent** | The `agent` node: the LLM decides whether a tool is needed, which one, and with what arguments, or it writes the final answer. |
 | **State** | `AgentState` in [`agent/state.py`](it_assistant/agent/state.py) holds the transcript, verified employee, pending ticket draft, trace and sources. It persists across turns through the **SQLite checkpointer**, one `thread_id` per conversation. |
 | **Nodes / edges** | [`agent/graph.py`](it_assistant/agent/graph.py): 11 nodes, normal edges, and 3 conditional routers. |
@@ -76,9 +90,10 @@ flowchart TD
 | Validate before creating a ticket | `validate_ticket_request()` re-checks every field the LLM provides: required fields, allowed category and priority values, length limits. Missing fields are sent back to the LLM, which asks the user. |
 | Don't execute blindly | `create_ticket` **only stages a draft**. The deterministic `confirmation_gate` node and the UI's ✅/❌ buttons need an explicit "yes" before `commit_ticket` writes anything. A reply like "yes but make it critical" counts as *unclear*, so the LLM revises the draft instead of submitting it. |
 | No duplicate tickets | Before staging, open tickets with the same category and similar text (Jaccard similarity) are flagged as a `possible_duplicate`. The LLM shows the existing ticket and only continues if the user says it's a different issue. |
-| Identity comes from state, not the LLM | The ticket tools have **no `employee_id` parameter**. The verified ID comes from graph state, so the LLM can't look up or file tickets for someone else. Asking for another employee's ticket ID returns "not found". |
+| Identity comes from state, not the LLM | The MCP client removes `employee_id` from the ticket tools' schemas before the model sees them, and fills it in from verified graph state on every call. A forged `employee_id` argument is discarded. Asking for another employee's ticket ID returns "not found". |
+| The model can't write directly | The write tool `commit_ticket` exists on the MCP server but is **never offered to the model**. If the model invents a call to it, the graph routes it to `unknown_tool`. Covered by `test_model_cannot_call_internal_commit_tool`. |
 | Clear message when info is missing | Tools return a `needs_input` status listing the missing fields. The system prompt tells the LLM to ask for them in one message. |
-| Tool failures handled gracefully | Every tool runs inside a try/except and failures come back as `is_error` tool results. LLM/API errors are mapped to friendly messages (rate limit, timeout, auth, and so on). The transcript stays valid, so the conversation can continue. |
+| Tool failures handled gracefully | Tool crashes, an unreachable MCP server, timeouts and invalid arguments all become error or `needs_input` tool results. Each tool also runs inside a try/except. LLM/API errors are mapped to friendly messages (rate limit, timeout, auth, and so on). The transcript stays valid, so the conversation can continue. |
 | Don't invent ticket info | The prompt says to state only facts from tool results. In addition, the `respond` guardrail checks every `INC######` in the answer against the DB and adds a ⚠️ warning for any it can't verify. |
 | Retrieved vs generated | Every answer shows **"Retrieved from company systems: 📘 KB-001 · 🎫 INC100231"** or **"AI-generated response, no company records used"**. The prompt also requires KB citations and labels general advice as such. |
 | Prompt-injection hardening | Application events reach the LLM as `<workflow_event>` blocks. If a user types that tag, it is escaped, so users can't forge "ticket created" events. |
@@ -91,11 +106,12 @@ flowchart TD
 | Language | Python 3.11+ (developed on 3.14; Docker image uses 3.12) |
 | Orchestration | LangGraph 1.2 (StateGraph, conditional edges, SQLite checkpointer) |
 | LLM | OpenAI (`gpt-5.4-mini` by default, configurable) via the official `openai` Python SDK, Chat Completions + function calling |
+| Tool protocol | MCP (Model Context Protocol) via the official `mcp` Python SDK 2.x: `MCPServer` + `Client`, stdio transport |
 | Data | SQLite (seeded from JSON) |
 | Retrieval | BM25 keyword search (pure Python, no extra model) |
 | UI | Streamlit 1.65 |
 | Config | `.env` + environment variables (`python-dotenv`) |
-| Testing | pytest, with a scripted fake LLM (no network or API key needed) |
+| Testing | pytest, with a scripted fake LLM and the real MCP server (in-process, plus one stdio test). No network or API key needed |
 | Deployment | Docker, docker-compose, Bitbucket Pipelines / GitHub Actions CI |
 
 ## 6. Project structure
@@ -112,9 +128,14 @@ flowchart TD
 │   │   ├── nodes.py               # Graph nodes, routers, guardrails
 │   │   ├── graph.py               # StateGraph wiring
 │   │   └── service.py             # AgentService: chat / reset / session API
+│   ├── mcp_server/
+│   │   ├── server.py              # MCP server: the 6 tools and their schemas
+│   │   └── __main__.py            # python -m it_assistant.mcp_server (stdio)
 │   ├── tools/
-│   │   ├── definitions.py         # Tool JSON schemas (OpenAI function format)
-│   │   └── executor.py            # Tool implementations -> ToolResult
+│   │   ├── definitions.py         # Tool names + agent-side tool policy
+│   │   ├── mcp_backend.py         # MCP client: discovery, schema conversion, call_tool
+│   │   ├── executor.py            # Tool business logic (runs inside the MCP server)
+│   │   └── results.py             # ToolResult / Source shared by server and client
 │   ├── services/
 │   │   ├── knowledge_search.py    # BM25 index
 │   │   ├── validation.py          # ID formats, ticket validation rules
@@ -128,7 +149,7 @@ flowchart TD
 ├── scripts/
 │   ├── init_db.py                 # Create / reset the database
 │   └── export_graph.py            # Export the LangGraph diagram (docs/graph.mmd)
-├── tests/                         # 44 tests: tools + end-to-end graph flows
+├── tests/                         # 53 tests: tools, MCP layer, end-to-end graph flows
 ├── docs/graph.mmd                 # Auto-generated graph diagram
 ├── Dockerfile, docker-compose.yml, bitbucket-pipelines.yml, .github/workflows/ci.yml
 ├── requirements.txt, requirements-dev.txt, .env.example, pyproject.toml
@@ -163,6 +184,7 @@ Edit `.env` and set `OPENAI_API_KEY`.
 | `OPENAI_BASE_URL` | no | *(OpenAI)* | Custom endpoint, e.g. a proxy |
 | `LLM_MAX_TOKENS` | no | `8000` | Max output tokens per call |
 | `LLM_TIMEOUT_SECONDS` / `LLM_MAX_RETRIES` | no | `90` / `3` | API timeout and automatic retries (429/5xx/network) |
+| `MCP_CALL_TIMEOUT_SECONDS` / `MCP_STARTUP_TIMEOUT_SECONDS` | no | `30` / `30` | Timeouts for MCP tool calls and server start-up |
 | `MAX_AGENT_STEPS` | no | `6` | Max LLM calls per user turn |
 | `MAX_USER_MESSAGE_CHARS` | no | `2000` | Input length limit |
 | `KB_TOP_K` / `KB_MIN_SCORE` | no | `3` / `0.5` | Knowledge search tuning |
@@ -176,7 +198,13 @@ Edit `.env` and set `OPENAI_API_KEY`.
 streamlit run app.py
 ```
 
-Then open http://localhost:8501. The database is created and seeded on first start.
+Then open http://localhost:8501. The app starts the MCP tool server automatically, and the database is created and seeded on first start.
+
+To run the MCP server on its own (for example, to connect another MCP client or the MCP Inspector):
+
+```bash
+python -m it_assistant.mcp_server
+```
 
 To reset the demo data (this also removes created tickets and saved conversations):
 
@@ -255,6 +283,9 @@ Bot:   Done. Your ticket INC100246 has been created and assigned to Network Oper
 8. **Persistence through LangGraph's SQLite checkpointer.** Conversation state survives app restarts. `reset()` deletes the thread.
 9. **Observability.** Rotating log files record each LLM call (tokens, latency, request ID), each tool status and each turn's duration. The UI shows the per-turn trace of nodes, tools, arguments and results.
 
+10. **Tools behind MCP.** The tools run in their own process and are reached over the Model Context Protocol. The agent never opens the business database, and the tool contract (names, schemas, descriptions) lives in one place, the server, and is discovered at runtime. Safety policy (hidden `commit_ticket`, injected `employee_id`) stays on the agent side, because the agent is the one that knows who has been verified.
+11. **Sync bridge for an async SDK.** The MCP SDK is async, while LangGraph's `invoke` and Streamlit are synchronous. `MCPToolBackend` keeps one MCP session open on a dedicated event-loop thread and exposes blocking `call()`. The connection is opened and closed inside one task, as the SDK requires.
+
 ## 11. Limitations and future work
 
 - Authentication is simulated: the employee ID is trusted as typed. In production it would come from SSO (e.g. OIDC claims) instead of the chat.
@@ -265,3 +296,5 @@ Bot:   Done. Your ticket INC100246 has been created and assigned to Network Oper
 - There is no ticket update/close tool yet, and no email notifications.
 - Long conversations send the full transcript every turn. Server-side compaction or summarisation would limit cost.
 - Responses aren't streamed token by token. The UI shows a spinner while the agent works.
+- The MCP server uses the stdio transport, so it runs on the same machine as the agent. To share it across machines or apps, run it with the Streamable HTTP transport (`server.run(transport="streamable-http")`) behind authentication.
+- The MCP server trusts its caller. Identity checks happen in the agent, so a different client connecting to the server would need its own auth layer.

@@ -15,7 +15,8 @@ from it_assistant.agent.state import AgentState
 from it_assistant.config import Settings
 from it_assistant.services.validation import TICKET_ID_IN_TEXT_RE
 from it_assistant.tools import definitions as tool_defs
-from it_assistant.tools.executor import CONFIRMATION_REQUIRED, SUCCESS, ToolExecutor, ToolResult
+from it_assistant.tools.mcp_backend import ToolBackend
+from it_assistant.tools.results import CONFIRMATION_REQUIRED, NEEDS_INPUT, SUCCESS, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +90,9 @@ def _trace(node: str, kind: str, label: str, started: float, **detail: Any) -> d
 
 
 class AgentNodes:
-    def __init__(self, llm: LLMClient, executor: ToolExecutor, settings: Settings) -> None:
+    def __init__(self, llm: LLMClient, tools: ToolBackend, settings: Settings) -> None:
         self._llm = llm
-        self._executor = executor
+        self._tools = tools  # MCP client: every tool call goes through the MCP server
         self._settings = settings
         self._system_prompt = build_system_prompt(settings.organization_name)
 
@@ -122,10 +123,10 @@ class AgentNodes:
         return update
 
     def commit_ticket(self, state: AgentState) -> dict[str, Any]:
-        """Writes the confirmed ticket to the database (the only node that does)."""
+        """Creates the confirmed ticket via the MCP commit_ticket tool (the only node that may)."""
         started = time.perf_counter()
         pending = state["pending_ticket"]
-        result = self._executor.commit_ticket(pending["draft"], pending["employee_id"])
+        result = self._tools.call(tool_defs.COMMIT_TICKET, {**pending["draft"], "employee_id": pending["employee_id"]})
         notes = list(state.get("workflow_notes", []))
         if result.status == SUCCESS:
             notes.append(
@@ -179,7 +180,7 @@ class AgentNodes:
         )
         try:
             response = self._llm.generate(
-                system=system, messages=state["llm_messages"], tools=tool_defs.TOOL_DEFINITIONS
+                system=system, messages=state["llm_messages"], tools=self._tools.llm_tools()
             )
         except LLMError as exc:
             # Keep the transcript well-formed (user/assistant alternation) for the next turn.
@@ -251,6 +252,18 @@ class AgentNodes:
             update.update(extra_update(result, args))
         return update
 
+    def _call_as_employee(self, name: str, args: dict[str, Any], employee_id: str | None) -> ToolResult:
+        """Calls an identity-scoped tool with the employee ID taken from verified state."""
+        if not employee_id:
+            return ToolResult(
+                NEEDS_INPUT,
+                "Employee is not verified yet. Ask the user for their employee ID and call "
+                "get_employee_profile first.",
+            )
+        hidden = tool_defs.STATE_INJECTED_ARGS.get(name, frozenset())
+        safe_args = {k: v for k, v in args.items() if k not in hidden}  # ignore anything the model tried to set
+        return self._tools.call(name, {**safe_args, "employee_id": employee_id})
+
     def employee_lookup(self, state: AgentState) -> dict[str, Any]:
         def remember_employee(result: ToolResult, _args: dict[str, Any]) -> dict[str, Any]:
             if result.status != SUCCESS:
@@ -263,16 +276,17 @@ class AgentNodes:
             return update
 
         return self._run_tool(state, EMPLOYEE_LOOKUP, "Employee lookup",
-                              self._executor.get_employee_profile, remember_employee)
+                              lambda args: self._tools.call(tool_defs.GET_EMPLOYEE_PROFILE, args),
+                              remember_employee)
 
     def knowledge_search(self, state: AgentState) -> dict[str, Any]:
         return self._run_tool(state, KNOWLEDGE_SEARCH, "Knowledge base search",
-                              self._executor.search_knowledge_base)
+                              lambda args: self._tools.call(tool_defs.SEARCH_KNOWLEDGE_BASE, args))
 
     def ticket_lookup(self, state: AgentState) -> dict[str, Any]:
         employee_id = (state.get("employee") or {}).get("employee_id")
         return self._run_tool(state, TICKET_LOOKUP, "Ticket lookup",
-                              lambda args: self._executor.lookup_tickets(args, employee_id))
+                              lambda args: self._call_as_employee(tool_defs.LOOKUP_TICKETS, args, employee_id))
 
     def ticket_creation(self, state: AgentState) -> dict[str, Any]:
         """Validates and duplicate-checks the request, then stages it for user confirmation."""
@@ -284,11 +298,12 @@ class AgentNodes:
             return {"pending_ticket": None}
 
         return self._run_tool(state, TICKET_CREATION, "Ticket creation - validate & stage",
-                              lambda args: self._executor.prepare_ticket(args, employee_id), stage_draft)
+                              lambda args: self._call_as_employee(tool_defs.CREATE_TICKET, args, employee_id),
+                              stage_draft)
 
     def system_status(self, state: AgentState) -> dict[str, Any]:
         return self._run_tool(state, SYSTEM_STATUS, "System status check",
-                              self._executor.check_system_status)
+                              lambda args: self._tools.call(tool_defs.CHECK_SYSTEM_STATUS, args))
 
     def unknown_tool(self, state: AgentState) -> dict[str, Any]:
         name = state["pending_tool_call"]["name"]
@@ -304,8 +319,9 @@ class AgentNodes:
 
         unverified = []
         for ticket_id in sorted(set(TICKET_ID_IN_TEXT_RE.findall(text))):
-            ticket = self._executor.tickets.get(ticket_id)
-            if ticket is None or ticket.employee_id != employee_id:
+            # Verified through the MCP server, scoped to the current employee.
+            check = self._call_as_employee(tool_defs.LOOKUP_TICKETS, {"ticket_id": ticket_id}, employee_id)
+            if check.status != SUCCESS:
                 unverified.append(ticket_id)
         trace = state.get("trace", [])
         if unverified:

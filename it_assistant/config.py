@@ -39,6 +39,10 @@ class Settings:
     request_timeout_seconds: float
     max_retries: int
 
+    # MCP tool server
+    mcp_call_timeout_seconds: float
+    mcp_startup_timeout_seconds: float
+
     # Agent behaviour
     max_agent_steps: int
     max_user_message_chars: int
@@ -76,6 +80,8 @@ class Settings:
             max_tokens=_env_int("LLM_MAX_TOKENS", 8000),
             request_timeout_seconds=_env_float("LLM_TIMEOUT_SECONDS", 90.0),
             max_retries=_env_int("LLM_MAX_RETRIES", 3),
+            mcp_call_timeout_seconds=_env_float("MCP_CALL_TIMEOUT_SECONDS", 30.0),
+            mcp_startup_timeout_seconds=_env_float("MCP_STARTUP_TIMEOUT_SECONDS", 30.0),
             max_agent_steps=_env_int("MAX_AGENT_STEPS", 6),
             max_user_message_chars=_env_int("MAX_USER_MESSAGE_CHARS", 2000),
             kb_top_k=_env_int("KB_TOP_K", 3),

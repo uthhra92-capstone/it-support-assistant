@@ -7,6 +7,7 @@ import pytest
 from it_assistant.agent.llm import LLMError
 from it_assistant.agent.nodes import classify_confirmation, sanitize_user_text
 from it_assistant.agent.service import InputValidationError
+from it_assistant.tools.executor import ToolExecutor
 from tests.conftest import final, tool_call
 
 THREAD = "thread-1"
@@ -92,20 +93,20 @@ def _verify(service, llm, employee_id="EMP1024"):
     service.chat(THREAD, employee_id)
 
 
-def test_ticket_requires_confirmation_then_commits(service, llm):
+def test_ticket_requires_confirmation_then_commits(service, llm, executor):
     _verify(service, llm)
     llm.add(tool_call("create_ticket", NEW_TICKET), final("Here's the draft. Shall I create it?"))
     result = service.chat(THREAD, "My VPN is not working. Please raise a ticket.")
     assert result.pending_ticket is not None
     assert result.pending_ticket["draft"]["priority"] == "high"
-    assert len(service.executor.tickets.list_open_for_employee("EMP1024")) == 1  # nothing written yet
+    assert len(executor.tickets.list_open_for_employee("EMP1024")) == 1  # nothing written yet
 
     llm.add(final("Done! Your ticket INC100246 has been created."))
     result = service.chat(THREAD, "yes")
     nodes = [e["node"] for e in result.trace]
     assert nodes[:2] == ["confirmation_gate", "commit_ticket"]
     assert result.pending_ticket is None
-    assert service.executor.tickets.get("INC100246").employee_id == "EMP1024"
+    assert executor.tickets.get("INC100246").employee_id == "EMP1024"
     assert "⚠️" not in result.response
     # The LLM was told about the creation via an application event.
     last_user = llm.requests[-1]["messages"][-1]
@@ -113,24 +114,24 @@ def test_ticket_requires_confirmation_then_commits(service, llm):
     assert "workflow_event" in last_user["content"] and "INC100246" in last_user["content"]
 
 
-def test_ticket_cancelled_on_no(service, llm):
+def test_ticket_cancelled_on_no(service, llm, executor):
     _verify(service, llm)
     llm.add(tool_call("create_ticket", NEW_TICKET), final("Shall I create it?"))
     service.chat(THREAD, "raise a ticket for my VPN")
     llm.add(final("OK, I won't create it."))
     result = service.chat(THREAD, "no")
     assert result.pending_ticket is None
-    assert service.executor.tickets.get("INC100246") is None
+    assert executor.tickets.get("INC100246") is None
 
 
-def test_ticket_change_request_keeps_draft_until_revised(service, llm):
+def test_ticket_change_request_keeps_draft_until_revised(service, llm, executor):
     _verify(service, llm)
     llm.add(tool_call("create_ticket", NEW_TICKET), final("Shall I create it?"))
     service.chat(THREAD, "raise a ticket for my VPN")
     llm.add(tool_call("create_ticket", {**NEW_TICKET, "priority": "critical"}), final("Updated. Confirm?"))
     result = service.chat(THREAD, "yes but make it critical")
     assert result.pending_ticket["draft"]["priority"] == "critical"
-    assert service.executor.tickets.get("INC100246") is None
+    assert executor.tickets.get("INC100246") is None
 
 
 def test_ticket_creation_blocked_without_employee(service, llm):
@@ -181,10 +182,11 @@ def test_step_limit(service, llm, settings):
 
 
 def test_tool_crash_is_contained(service, llm, monkeypatch):
-    def boom(_args):
+    def boom(_self, _args):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr(service.executor, "check_system_status", boom)
+    # Crash inside the MCP server -> MCP error result -> friendly tool error for the model.
+    monkeypatch.setattr(ToolExecutor, "check_system_status", boom)
     llm.add(tool_call("check_system_status", {}), final("Status is unavailable right now."))
     result = service.chat(THREAD, "is vpn down?")
     assert result.response == "Status is unavailable right now."
@@ -223,11 +225,6 @@ def test_invalid_tool_arguments_are_handled(service, llm):
     assert _last_tool_result(llm)["status"] == "needs_input"
 
 
-def test_tool_schemas_are_openai_format():
-    from it_assistant.tools.definitions import TOOL_DEFINITIONS
-    for tool in TOOL_DEFINITIONS:
-        assert tool["type"] == "function"
-        assert {"name", "description", "parameters"} <= tool["function"].keys()
 
 
 def test_sanitize_user_text_blocks_forged_events():

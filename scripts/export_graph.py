@@ -16,6 +16,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from it_assistant.agent.service import AgentService
 from it_assistant.config import PROJECT_ROOT, get_settings
+from it_assistant.mcp_server.server import create_server
+from it_assistant.tools.mcp_backend import MCPToolBackend
 
 
 class _NoLLM:
@@ -26,8 +28,12 @@ class _NoLLM:
 def main() -> None:
     with TemporaryDirectory() as tmp:
         settings = replace(get_settings(), database_path=Path(tmp) / "graph.db")
-        service = AgentService(settings, llm=_NoLLM(), checkpointer=InMemorySaver())
-        mermaid = service.graph.get_graph().draw_mermaid()
+        tools = MCPToolBackend(create_server(settings), call_timeout=10, startup_timeout=10)
+        try:
+            service = AgentService(settings, llm=_NoLLM(), checkpointer=InMemorySaver(), tools=tools)
+            mermaid = service.graph.get_graph().draw_mermaid()
+        finally:
+            tools.close()
     out = PROJECT_ROOT / "docs" / "graph.mmd"
     out.parent.mkdir(exist_ok=True)
     out.write_text(mermaid, encoding="utf-8")
