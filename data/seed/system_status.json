@@ -1,0 +1,11 @@
+[
+  {"system_name": "VPN (GlobalProtect)", "status": "degraded", "message": "Intermittent disconnects for users connecting through the APAC-South gateway. Network Operations is investigating; use the APAC-East gateway as a workaround.", "updated_at": "2026-10-09T03:15:00+00:00"},
+  {"system_name": "Email (Exchange Online)", "status": "operational", "message": "All services running normally.", "updated_at": "2026-10-09T02:00:00+00:00"},
+  {"system_name": "Microsoft Teams", "status": "operational", "message": "All services running normally.", "updated_at": "2026-10-09T02:00:00+00:00"},
+  {"system_name": "Single Sign-On (Okta)", "status": "operational", "message": "All services running normally.", "updated_at": "2026-10-09T02:00:00+00:00"},
+  {"system_name": "Corporate Wi-Fi", "status": "degraded", "message": "Slow speeds on Seattle building B, floor 4. Access point replacement scheduled.", "updated_at": "2026-10-09T01:00:00+00:00"},
+  {"system_name": "HR Portal (Workday)", "status": "maintenance", "message": "Scheduled maintenance on 2026-10-11 from 01:00 to 05:00 UTC. The portal will be unavailable.", "updated_at": "2026-10-08T10:00:00+00:00"},
+  {"system_name": "Jira & Confluence", "status": "operational", "message": "All services running normally.", "updated_at": "2026-10-09T02:00:00+00:00"},
+  {"system_name": "SAP ERP", "status": "operational", "message": "All services running normally.", "updated_at": "2026-10-09T02:00:00+00:00"},
+  {"system_name": "File Shares (OneDrive/SharePoint)", "status": "operational", "message": "All services running normally.", "updated_at": "2026-10-09T02:00:00+00:00"}
+]

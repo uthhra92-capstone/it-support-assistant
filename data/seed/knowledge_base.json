@@ -1,0 +1,98 @@
+[
+  {
+    "article_id": "KB-001",
+    "title": "How to reset your VPN password",
+    "category": "vpn",
+    "tags": ["vpn", "password", "reset", "globalprotect", "remote access"],
+    "last_updated": "2026-08-14",
+    "content": "Your VPN (GlobalProtect) password is the same as your corporate SSO password. To reset it: 1) Go to https://password.contoso.example from any browser. 2) Click 'Forgot password' and enter your corporate email. 3) Approve the Microsoft Authenticator prompt on your registered phone. 4) Choose a new password: at least 14 characters, with upper case, lower case, a number and a symbol; it cannot match your last 10 passwords. 5) Wait 5 minutes for the change to sync, then disconnect and reconnect GlobalProtect using the new password. If you are locked out after 5 failed attempts, the account unlocks automatically after 30 minutes, or the Service Desk can unlock it sooner."
+  },
+  {
+    "article_id": "KB-002",
+    "title": "Troubleshooting VPN connection problems",
+    "category": "vpn",
+    "tags": ["vpn", "not working", "disconnect", "cannot connect", "globalprotect", "gateway"],
+    "last_updated": "2026-09-22",
+    "content": "If GlobalProtect VPN will not connect or keeps disconnecting: 1) Check the IT system status page for a known VPN incident. 2) Confirm your internet connection works without VPN by opening any public website. 3) In GlobalProtect, open Settings > General and switch the gateway from 'Best Available' to a different regional gateway (for example APAC-East). 4) Sign out of GlobalProtect, restart your laptop and sign in again. 5) Make sure the GlobalProtect client is version 6.2 or newer (Software Center > GlobalProtect > Update). 6) Hotel and public Wi-Fi networks sometimes block VPN; try a mobile hotspot. If the problem continues after these steps, raise a ticket with the error message shown and the gateway you used."
+  },
+  {
+    "article_id": "KB-003",
+    "title": "Resetting your corporate (SSO) password",
+    "category": "account_access",
+    "tags": ["password", "reset", "sso", "okta", "locked out", "account"],
+    "last_updated": "2026-07-30",
+    "content": "Your corporate password is used for Windows sign-in, email, VPN and all SSO (Okta) applications. To reset it, go to https://password.contoso.example, choose 'Forgot password', verify with Microsoft Authenticator, and set a new password of at least 14 characters. Passwords expire every 90 days; you will get reminder emails 14, 7 and 1 day before expiry. After resetting, lock and unlock your laptop while connected to the office network or VPN so the new password is cached. Update the password on your phone's mail app too, or it may lock your account by retrying the old one."
+  },
+  {
+    "article_id": "KB-004",
+    "title": "Setting up or moving Microsoft Authenticator (MFA) to a new phone",
+    "category": "account_access",
+    "tags": ["mfa", "authenticator", "new phone", "two-factor", "2fa", "push notification"],
+    "last_updated": "2026-09-05",
+    "content": "To move MFA to a new phone: 1) On a computer, go to https://mysignins.contoso.example/security-info. 2) Click 'Add sign-in method' > 'Authenticator app' and scan the QR code with the Microsoft Authenticator app on the new phone. 3) Approve the test notification. 4) Set the new phone as the default sign-in method and delete the old device entry. If you no longer have the old phone and cannot sign in, contact the Service Desk at extension 4357 for a temporary access pass; identity verification with your manager is required. If push notifications do not arrive, check that notifications are enabled for Authenticator and that battery saver is not restricting it."
+  },
+  {
+    "article_id": "KB-005",
+    "title": "Outlook is not syncing or shows 'Disconnected'",
+    "category": "email",
+    "tags": ["outlook", "email", "sync", "disconnected", "shared mailbox", "exchange"],
+    "last_updated": "2026-08-28",
+    "content": "If Outlook is not receiving email or shows 'Disconnected' or 'Trying to connect': 1) Check the IT system status page for Exchange Online incidents. 2) Confirm you can open Outlook on the web at https://outlook.office.com; if web mail works, the issue is local. 3) In Outlook, click Send/Receive > Update Folder. 4) Close Outlook, then run Outlook in safe mode (hold Ctrl while opening it) to rule out add-ins. 5) Repair the Office installation from Settings > Apps > Microsoft 365 > Modify > Quick Repair. Shared mailboxes can take up to 60 minutes to appear after permissions are granted. If a shared mailbox still does not sync, raise a ticket with the mailbox address."
+  },
+  {
+    "article_id": "KB-006",
+    "title": "Adding a network printer",
+    "category": "printer",
+    "tags": ["printer", "print", "add printer", "queue", "papercut"],
+    "last_updated": "2026-06-18",
+    "content": "Office printers use PaperCut secure printing. To add the follow-me printer: 1) Open Software Center and install 'PaperCut Print Deploy'. 2) Restart your laptop; the 'Contoso-FollowMe' printer appears automatically. 3) Send your document to Contoso-FollowMe, then tap your badge on any office printer to release it. Jobs are held for 24 hours. If jobs stay in the queue, remove and re-add the printer, and make sure you are on the office network or VPN. Printing from personal devices is not supported."
+  },
+  {
+    "article_id": "KB-007",
+    "title": "Connecting to corporate Wi-Fi",
+    "category": "network",
+    "tags": ["wifi", "wi-fi", "wireless", "network", "slow", "internet"],
+    "last_updated": "2026-05-11",
+    "content": "Company laptops connect automatically to the 'Contoso-Corp' Wi-Fi using a device certificate; no password is needed. Guests and personal devices should use 'Contoso-Guest' with the daily code from reception. If Contoso-Corp does not connect: 1) Turn Wi-Fi off and on. 2) Forget the network and reconnect. 3) Restart the laptop while connected by cable or VPN so the device certificate can renew. For slow Wi-Fi, check the IT system status page for known issues in your building and move closer to an access point. Report persistent slowness with your building, floor and a speed test result."
+  },
+  {
+    "article_id": "KB-008",
+    "title": "Laptop battery draining quickly",
+    "category": "hardware",
+    "tags": ["laptop", "battery", "drain", "power", "hardware", "charging"],
+    "last_updated": "2026-07-02",
+    "content": "To improve battery life: 1) Set Windows power mode to 'Best power efficiency' (Settings > System > Power & battery). 2) Check Battery usage per app and close heavy apps such as video calls when not needed. 3) Lower screen brightness and disable keyboard backlight. 4) Install pending firmware updates from Software Center (Lenovo Vantage / Dell Command Update). To check battery health, run 'powercfg /batteryreport' in a command prompt and compare 'Full charge capacity' to 'Design capacity'. If full charge capacity is below 70% of design capacity, raise a hardware ticket; laptops under 4 years old get a free battery replacement."
+  },
+  {
+    "article_id": "KB-009",
+    "title": "Requesting and installing software",
+    "category": "software",
+    "tags": ["software", "install", "application", "license", "software center", "request"],
+    "last_updated": "2026-08-01",
+    "content": "Approved software can be installed without admin rights from Software Center (Start menu > Software Center). If the application you need is not listed, request it through the IT portal under 'Request > Software'. Licensed software (for example Adobe Acrobat Pro, Visio, Tableau) needs manager approval, which is requested automatically. Typical fulfilment time is 2 business days after approval. Do not install software downloaded from the internet; it will be blocked by endpoint protection."
+  },
+  {
+    "article_id": "KB-010",
+    "title": "Microsoft Teams audio and headset problems",
+    "category": "software",
+    "tags": ["teams", "audio", "microphone", "headset", "speaker", "camera", "calls"],
+    "last_updated": "2026-09-15",
+    "content": "If others cannot hear you in Teams or your headset is not detected: 1) In Teams, open Settings > Devices and choose your headset for both speaker and microphone. 2) Unplug the headset, wait 10 seconds, and plug it into a different USB port (avoid USB hubs). 3) In Windows Settings > Privacy & security > Microphone, make sure microphone access is on for Teams. 4) Use 'Make a test call' in Teams device settings. 5) Install Jabra Direct or Poly Lens from Software Center for headset firmware updates. If the headset is not detected in any application after a Windows update, raise a hardware ticket."
+  },
+  {
+    "article_id": "KB-011",
+    "title": "Reporting a lost or stolen device",
+    "category": "hardware",
+    "tags": ["lost", "stolen", "laptop", "phone", "security", "device"],
+    "last_updated": "2026-04-20",
+    "content": "Report a lost or stolen laptop or phone immediately by calling the Service Desk at extension 4357 (24x7) - do not wait. IT will remotely lock and wipe the device and reset your sessions. Then file a police report if the device was stolen and send the reference number to IT. A replacement laptop is normally issued within 2 business days after manager approval. Lost or stolen devices are treated as critical priority security incidents."
+  },
+  {
+    "article_id": "KB-012",
+    "title": "Accessing shared drives and SharePoint",
+    "category": "network",
+    "tags": ["shared drive", "sharepoint", "onedrive", "access", "permissions", "files"],
+    "last_updated": "2026-06-30",
+    "content": "Team files are stored in SharePoint and synced with OneDrive. To access a team site, open https://contoso.sharepoint.com and use 'Request access' on the site; the site owner approves the request. To sync a library to your laptop, click 'Sync' in the document library toolbar. If files show a red X in File Explorer, sign out of OneDrive and back in. For permission changes on sensitive sites (Finance, HR, Legal), raise an account access ticket with the site URL and your manager's approval."
+  }
+]

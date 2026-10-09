@@ -1,0 +1,13 @@
+[project]
+name = "it-support-assistant"
+version = "1.0.0"
+description = "Agentic AI IT Support Assistant built with LangGraph, Claude and Streamlit"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"

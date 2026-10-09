@@ -1,0 +1,13 @@
+[server]
+headless = true
+maxUploadSize = 1
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "none"
+
+[theme]
+primaryColor = "#2563eb"
